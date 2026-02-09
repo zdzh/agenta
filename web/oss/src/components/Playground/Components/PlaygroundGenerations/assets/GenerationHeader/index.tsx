@@ -14,6 +14,7 @@ import {runAllChatAtom} from "@/oss/state/newPlayground/chat/actions"
 import RunButton from "../../../../assets/RunButton"
 import {usePlaygroundAtoms} from "../../../../hooks/usePlaygroundAtoms"
 import {generationHeaderDataAtomFamily, triggerWebWorkerTestAtom} from "../../../../state/atoms"
+import RunOptionsPopover from "../RunOptionsPopover"
 
 import {allGenerationsCollapsedAtom} from "./store"
 import {useStyles} from "./styles"
@@ -40,6 +41,7 @@ const GenerationHeader = ({variantId}: GenerationHeaderProps) => {
     const triggerTest = useSetAtom(triggerWebWorkerTestAtom)
     const runAllChat = useSetAtom(runAllChatAtom)
     const appType = useAtomValue(appTypeAtom)
+
     const completionRowIds = useAtomValue(generationInputRowIdsAtom) as string[]
     const [isAllCollapsed, setIsAllCollapsed] = useAtom(allGenerationsCollapsedAtom)
 
@@ -48,7 +50,7 @@ const GenerationHeader = ({variantId}: GenerationHeaderProps) => {
         else {
             // Run for all completion rows: iterate input row ids and trigger tests
             for (const rid of completionRowIds || []) {
-                triggerTest({rowId: rid, variantId})
+                triggerTest({rowId: rid, revisionId: variantId})
             }
         }
     }, [appType, runAllChat, completionRowIds, triggerTest, variantId])
@@ -70,7 +72,7 @@ const GenerationHeader = ({variantId}: GenerationHeaderProps) => {
     return (
         <div
             className={clsx(
-                "h-[48px] flex justify-between items-center gap-4 sticky top-0 z-[1000] !bg-[white]",
+                "h-[48px] flex justify-between items-center gap-4 sticky top-0 z-[100] !bg-[white]",
                 classes.container,
             )}
         >
@@ -111,14 +113,18 @@ const GenerationHeader = ({variantId}: GenerationHeaderProps) => {
                     />
 
                     {!isRunning ? (
-                        <Tooltip title="Run all (Ctrl+Enter / ⌘+Enter)">
-                            <RunButton
-                                isRunAll
-                                type="primary"
-                                onClick={() => runTests()}
-                                disabled={isRunning}
-                            />
-                        </Tooltip>
+                        <div className="flex">
+                            <Tooltip title="Run all (Ctrl+Enter / ⌘+Enter)">
+                                <RunButton
+                                    isRunAll
+                                    type="primary"
+                                    onClick={() => runTests()}
+                                    disabled={isRunning}
+                                    style={{borderRadius: "6px 0 0 6px"}}
+                                />
+                            </Tooltip>
+                            <RunOptionsPopover isRunning={isRunning} variantId={variantId} />
+                        </div>
                     ) : (
                         <RunButton
                             isCancel

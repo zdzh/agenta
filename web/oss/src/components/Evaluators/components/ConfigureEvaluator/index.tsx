@@ -12,19 +12,21 @@
  */
 import {useCallback, useEffect, useMemo} from "react"
 
+import {message} from "@agenta/ui/app-message"
 import {ArrowLeftOutlined} from "@ant-design/icons"
 import {Button, Result} from "antd"
 import {useAtomValue, useSetAtom} from "jotai"
 import dynamic from "next/dynamic"
 import {useRouter} from "next/router"
 
-import {message} from "@/oss/components/AppMessageContext"
 import {
     initPlaygroundAtom,
+    playgroundEditValuesAtom,
     resetPlaygroundAtom,
 } from "@/oss/components/pages/evaluations/autoEvaluation/EvaluatorsModal/ConfigureEvaluator/state/atoms"
 import useURL from "@/oss/hooks/useURL"
 import useFetchEvaluatorsData from "@/oss/lib/hooks/useFetchEvaluatorsData"
+import {recordWidgetEventAtom} from "@/oss/lib/onboarding"
 import {Evaluator} from "@/oss/lib/Types"
 import {evaluatorByKeyAtomFamily} from "@/oss/state/evaluators"
 
@@ -52,11 +54,16 @@ const ConfigureEvaluatorPage = ({evaluatorId}: {evaluatorId?: string | null}) =>
     // Atom actions
     const initPlayground = useSetAtom(initPlaygroundAtom)
     const resetPlayground = useSetAtom(resetPlaygroundAtom)
+    const stagedConfig = useAtomValue(playgroundEditValuesAtom)
+    const recordWidgetEvent = useSetAtom(recordWidgetEventAtom)
 
     const existingConfig = useMemo(() => {
         if (!evaluatorId) return null
-        return evaluatorConfigs.find((config) => config.id === evaluatorId) ?? null
-    }, [evaluatorConfigs, evaluatorId])
+        return (
+            evaluatorConfigs.find((config) => config.id === evaluatorId) ??
+            (stagedConfig?.id === evaluatorId ? stagedConfig : null)
+        )
+    }, [evaluatorConfigs, evaluatorId, stagedConfig])
 
     const evaluatorKey = existingConfig?.evaluator_key ?? evaluatorId ?? null
 
@@ -98,8 +105,9 @@ const ConfigureEvaluatorPage = ({evaluatorId}: {evaluatorId?: string | null}) =>
 
     const handleSuccess = useCallback(async () => {
         message.success("Evaluator configuration saved")
+        recordWidgetEvent("evaluator_created")
         await refetchAll()
-    }, [refetchAll])
+    }, [recordWidgetEvent, refetchAll])
 
     if (!router.isReady || isLoading) {
         return <ConfigureEvaluatorSkeleton />

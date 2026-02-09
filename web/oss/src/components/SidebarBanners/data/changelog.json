@@ -1,8 +1,26 @@
 [
     {
-        "id": "changelog-2024-12-16-pdf-support",
-        "title": "PDF Support in Playground",
-        "description": "You can now upload and test PDFs directly in the playground.",
-        "link": "https://agenta.ai/docs/changelog/pdf-support-in-playground"
+        "id": "changelog-2026-02-04-prompt-folders",
+        "title": "Folders for Prompt Organization",
+        "description": "Organize prompts with folders and subfolders. Drag, move, and search.",
+        "link": "https://agenta.ai/docs/changelog/prompt-folders"
+    },
+    {
+        "id": "changelog-2026-01-29-onboarding",
+        "title": "Onboarding Widget & Walkthroughs",
+        "description": "Guided tours to help you explore the playground, evaluations, and observability.",
+        "link": "https://agenta.ai/docs/changelog/onboarding-widget-walkthroughs"
+    },
+    {
+        "id": "changelog-2026-01-28-trace-navigation",
+        "title": "Navigate from Traces to Configs",
+        "description": "Click from any trace to the app, variant, or environment that generated it.",
+        "link": "https://agenta.ai/docs/changelog/trace-navigation-links"
+    },
+    {
+        "id": "changelog-2026-01-20-testset-versioning",
+        "title": "Test Set Versioning",
+        "description": "Track test set changes and link evaluations to specific versions.",
+        "link": "https://agenta.ai/docs/changelog/testset-versioning"
     }
 ]

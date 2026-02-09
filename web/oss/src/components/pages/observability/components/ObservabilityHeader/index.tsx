@@ -84,7 +84,7 @@ const AutoRefreshControl: React.FC<{
             <Switch size="small" checked={checked} onChange={onChange} />
             <div className="relative inline-block">
                 <Typography.Text style={{fontSize: 12}} className="text-gray-600">
-                    Auto-refresh
+                    auto-refresh
                 </Typography.Text>
                 {checked && (
                     <div
@@ -416,6 +416,7 @@ const ObservabilityHeader = ({
                                     icon={<DatabaseIcon size={14} />}
                                     disabled={traces.length === 0 || selectedRowKeys.length === 0}
                                     tooltipProps={{title: "Add to testset"}}
+                                    data-tour="create-testset-button"
                                 />
                             </>
                         ) : null}
@@ -480,6 +481,7 @@ const ObservabilityHeader = ({
                                 onClick={() => getTestsetTraceData()}
                                 icon={<DatabaseIcon size={14} />}
                                 disabled={traces.length === 0 || selectedRowKeys.length === 0}
+                                data-tour="create-testset-button"
                             >
                                 Add to testset
                             </Button>

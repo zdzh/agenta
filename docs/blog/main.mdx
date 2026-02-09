@@ -10,6 +10,100 @@ import Image from "@theme/IdealImage";
 
 <section class="changelog">
 
+### [Folders for Prompt Organization](/changelog/prompt-folders)
+
+_4 February 2026_
+
+**v0.82.0**
+
+<div style={{display: "flex", justifyContent: "center", marginTop: "20px", marginBottom: "20px", flexDirection: "column", alignItems: "center"}}>
+  <iframe
+    width="100%"
+    height="420"
+    src="https://www.youtube.com/embed/2oy6ymnOq7I"
+    title="Folders for Prompt Organization"
+    frameBorder="0"
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+    allowFullScreen
+  ></iframe>
+</div>
+
+Prompts multiply fast when you're building agents or managing multiple use cases. Finding the right one becomes guesswork.
+
+You can now create folders and subfolders to organize prompts. Drag prompts between folders, create nested hierarchies, and search across everything. Folder URLs are shareable.
+
+---
+
+### [Onboarding Widget and Guided Walkthroughs](/changelog/onboarding-widget-walkthroughs)
+
+_29 January 2026_
+
+**v0.81.1**
+
+New users now get an onboarding widget with guided walkthroughs. The widget appears in the sidebar and walks you through key features like the playground, evaluations, and observability. Each tour highlights UI elements as you go, so you learn by doing. Track your progress and revisit walkthroughs anytime.
+
+---
+
+### [Navigation Links from Traces to App/Environment/Variant](/changelog/trace-navigation-links)
+
+_28 January 2026_
+
+**v0.81.0**
+
+You can now click directly from any trace to the application, variant, or environment that generated it. Links appear in both the trace table and drawer view. This makes debugging faster since you can jump straight to the configuration that produced a specific output.
+
+To enable navigation links, store references in your traces using the Python SDK (`ag.tracing.store_refs()`) or OpenTelemetry span attributes. See the [reference prompt versions guide](/observability/trace-with-python-sdk/reference-prompt-versions) for details.
+
+---
+
+### [Test Set Versioning and New Test Set UI](/changelog/testset-versioning)
+
+_20 January 2026_
+
+**v0.74.0**
+
+Test sets now have versioning. Every edit, upload, or programmatic update creates a new version. Evaluations link to specific versions, so you can compare results knowing they used the same test data.
+
+The test set UI is completely rebuilt. It handles hundreds of thousands of rows without slowing down. Editing is much easier, especially for chat messages. You can view and edit complex JSON directly, toggle between raw and formatted views, and choose whether columns store strings or JSON.
+
+---
+
+### [Playground UX Improvements](/changelog/playground-ux-improvements-jan-2026)
+
+_13 January 2026_
+
+**v0.73.0**
+
+Three quality-of-life improvements to the Playground: You can now see provider costs per million tokens directly in the model selection dropdown. You can run evaluations directly from the Playground without navigating to the evaluation menu. And you can collapse test cases to navigate large test sets more easily.
+
+---
+
+### [Chat Sessions in Observability](/changelog/chat-sessions-observability)
+
+_9 January 2026_
+
+**v0.73.0**
+
+You can now track multi-turn conversations with chat sessions. All traces with the same session ID are automatically grouped together, letting you analyze complete conversations instead of individual requests.
+
+The new session browser shows key metrics like total cost, latency, and token usage per conversation. Open any session to see all traces with their parent-child relationships. This makes debugging chatbots and AI assistants much easier. Add session tracking with one line of code using either our Python SDK or OpenTelemetry.
+
+**Minor improvements:**
+
+- Added time filtering to the analytics dashboard. You can now view metrics for the last 6 hours, 24 hours, 7 days, or 30 days.
+- Added the ability to batch delete multiple traces at once. Select traces using checkboxes and delete them in a single operation.
+
+---
+
+### [JSON Multi-Field Match Evaluator](/changelog/json-multi-field-match)
+
+_31 December 2025_
+
+**v0.73.0**
+
+The new JSON Multi-Field Match evaluator validates multiple fields between JSON objects. Configure any number of field paths using dot notation, JSON Path, or JSON Pointer formats. Each field gets its own score (0 or 1), and an aggregate score shows the percentage of matching fields. This evaluator is ideal for entity extraction tasks like validating extracted names, emails, and addresses. The UI automatically detects fields from your test data for quick setup. This replaces the old JSON Field Match evaluator, which only supported single fields.
+
+---
 
 ### [PDF Support in the Playground](/changelog/pdf-support-in-playground)
 

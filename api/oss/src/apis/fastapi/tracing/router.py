@@ -63,6 +63,8 @@ log = get_module_logger(__name__)
 
 if is_ee():
     from ee.src.utils.entitlements import check_entitlements, Counter
+    from ee.src.models.shared_models import Permission
+    from ee.src.utils.permissions import check_action_access, FORBIDDEN_EXCEPTION
 
 
 class TracingRouter:
@@ -190,6 +192,14 @@ class TracingRouter:
         request: Request,
         spans_request: OTelTracingRequest,
     ) -> OTelLinksResponse:
+        if is_ee():
+            if not await check_action_access(  # type: ignore
+                user_uid=request.state.user_id,
+                project_id=request.state.project_id,
+                permission=Permission.EDIT_SPANS,  # type: ignore
+            ):
+                raise FORBIDDEN_EXCEPTION  # type: ignore
+
         links = await self._upsert(
             project_id=UUID(request.state.project_id),
             user_id=UUID(request.state.user_id),
@@ -207,12 +217,20 @@ class TracingRouter:
         return link_response
 
     @intercept_exceptions()
-    @suppress_exceptions(default=OTelTracingResponse())
+    @suppress_exceptions(default=OTelTracingResponse(), exclude=[HTTPException])
     async def query_spans(  # QUERY
         self,
         request: Request,
         query: Optional[TracingQuery] = Depends(parse_query_from_params_request),
     ) -> OTelTracingResponse:
+        if is_ee():
+            if not await check_action_access(  # type: ignore
+                user_uid=request.state.user_id,
+                project_id=request.state.project_id,
+                permission=Permission.VIEW_SPANS,  # type: ignore
+            ):
+                raise FORBIDDEN_EXCEPTION  # type: ignore
+
         body_json = None
         query_from_body = None
 
@@ -243,6 +261,10 @@ class TracingRouter:
                     query=merged_query,
                 )
             except FilteringException as e:
+                log.error(
+                    "Error in filtering conditions while querying spans",
+                    exc_info=True,
+                )
                 raise HTTPException(
                     status_code=400,
                     detail=str(e),
@@ -317,7 +339,7 @@ class TracingRouter:
             return None
 
     @intercept_exceptions()
-    @suppress_exceptions(default=AnalyticsResponse())
+    @suppress_exceptions(default=AnalyticsResponse(), exclude=[HTTPException])
     async def fetch_analytics(
         self,
         request: Request,
@@ -325,6 +347,14 @@ class TracingRouter:
             parse_analytics_from_params_request
         ),
     ) -> AnalyticsResponse:
+        if is_ee():
+            if not await check_action_access(  # type: ignore
+                user_uid=request.state.user_id,
+                project_id=request.state.project_id,
+                permission=Permission.VIEW_SPANS,  # type: ignore
+            ):
+                raise FORBIDDEN_EXCEPTION  # type: ignore
+
         body_json = None
         analytics_from_body = (None, None)
 
@@ -389,12 +419,20 @@ class TracingRouter:
         )
 
     @intercept_exceptions()
-    @suppress_exceptions(default=OldAnalyticsResponse())
+    @suppress_exceptions(default=OldAnalyticsResponse(), exclude=[HTTPException])
     async def fetch_legacy_analytics(
         self,
         request: Request,
         query: Optional[TracingQuery] = Depends(parse_query_from_params_request),
     ) -> OldAnalyticsResponse:
+        if is_ee():
+            if not await check_action_access(  # type: ignore
+                user_uid=request.state.user_id,
+                project_id=request.state.project_id,
+                permission=Permission.VIEW_SPANS,  # type: ignore
+            ):
+                raise FORBIDDEN_EXCEPTION  # type: ignore
+
         body_json = None
         query_from_body = None
 
@@ -531,6 +569,14 @@ class TracingRouter:
         trace_request: OTelTracingRequest,
         sync: bool = False,
     ) -> OTelLinksResponse:
+        if is_ee():
+            if not await check_action_access(  # type: ignore
+                user_uid=request.state.user_id,
+                project_id=request.state.project_id,
+                permission=Permission.EDIT_SPANS,  # type: ignore
+            ):
+                raise FORBIDDEN_EXCEPTION  # type: ignore
+
         spans = None
 
         if trace_request.traces:
@@ -599,12 +645,20 @@ class TracingRouter:
         return link_response
 
     @intercept_exceptions()
-    @suppress_exceptions(default=OTelTracingResponse())
+    @suppress_exceptions(default=OTelTracingResponse(), exclude=[HTTPException])
     async def fetch_trace(  # READ
         self,
         request: Request,
         trace_id: str,
     ) -> OTelTracingResponse:
+        if is_ee():
+            if not await check_action_access(  # type: ignore
+                user_uid=request.state.user_id,
+                project_id=request.state.project_id,
+                permission=Permission.VIEW_SPANS,  # type: ignore
+            ):
+                raise FORBIDDEN_EXCEPTION  # type: ignore
+
         try:
             trace_id = parse_trace_id_to_uuid(trace_id)
 
@@ -646,6 +700,14 @@ class TracingRouter:
         trace_id: str,
         sync: bool = False,
     ) -> OTelLinksResponse:
+        if is_ee():
+            if not await check_action_access(  # type: ignore
+                user_uid=request.state.user_id,
+                project_id=request.state.project_id,
+                permission=Permission.EDIT_SPANS,  # type: ignore
+            ):
+                raise FORBIDDEN_EXCEPTION  # type: ignore
+
         spans = None
 
         if trace_request.traces:
@@ -696,8 +758,6 @@ class TracingRouter:
                 detail="Too many root spans",
             )
 
-        log.debug(f"Editing trace {trace_id} with {len(spans)} spans.")
-
         try:
             links = await self._upsert(
                 project_id=UUID(request.state.project_id),
@@ -725,6 +785,14 @@ class TracingRouter:
         request: Request,
         trace_id: str,
     ) -> OTelLinksResponse:
+        if is_ee():
+            if not await check_action_access(  # type: ignore
+                user_uid=request.state.user_id,
+                project_id=request.state.project_id,
+                permission=Permission.EDIT_SPANS,  # type: ignore
+            ):
+                raise FORBIDDEN_EXCEPTION  # type: ignore
+
         try:
             trace_id = parse_trace_id_to_uuid(trace_id)
 
@@ -750,12 +818,20 @@ class TracingRouter:
     ## SESSIONS & USERS
 
     @intercept_exceptions()
-    @suppress_exceptions(default=SessionIdsResponse())
+    @suppress_exceptions(default=SessionIdsResponse(), exclude=[HTTPException])
     async def list_sessions(
         self,
         request: Request,
         sessions_query_request: SessionsQueryRequest,
     ):
+        if is_ee():
+            if not await check_action_access(  # type: ignore
+                user_uid=request.state.user_id,
+                project_id=request.state.project_id,
+                permission=Permission.VIEW_SPANS,  # type: ignore
+            ):
+                raise FORBIDDEN_EXCEPTION  # type: ignore
+
         session_ids, activity_cursor = await self.service.sessions(
             project_id=request.state.project_id,
             #
@@ -780,12 +856,20 @@ class TracingRouter:
         return session_ids_response
 
     @intercept_exceptions()
-    @suppress_exceptions(default=UserIdsResponse())
+    @suppress_exceptions(default=UserIdsResponse(), exclude=[HTTPException])
     async def list_users(
         self,
         request: Request,
         users_query_request: UsersQueryRequest,
     ):
+        if is_ee():
+            if not await check_action_access(  # type: ignore
+                user_uid=request.state.user_id,
+                project_id=request.state.project_id,
+                permission=Permission.VIEW_SPANS,  # type: ignore
+            ):
+                raise FORBIDDEN_EXCEPTION  # type: ignore
+
         user_ids, activity_cursor = await self.service.users(
             project_id=request.state.project_id,
             #

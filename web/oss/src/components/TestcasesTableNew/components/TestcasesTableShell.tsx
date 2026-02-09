@@ -1,5 +1,6 @@
 import {useCallback, useMemo, useState} from "react"
 
+import {message} from "@agenta/ui/app-message"
 import {MoreOutlined, PlusOutlined} from "@ant-design/icons"
 import {CaretDown, CaretRight, Copy, PencilSimple, Trash} from "@phosphor-icons/react"
 import {Button, Dropdown, Input, Skeleton, Tooltip} from "antd"
@@ -16,7 +17,6 @@ import {
 import {copyToClipboard} from "@/oss/lib/helpers/copyToClipboard"
 import type {Column} from "@/oss/state/entities/testcase/columnState"
 
-import {message} from "../../AppMessageContext"
 import {testcasesDatasetStore, type TestcaseTableRow} from "../atoms/tableStore"
 import type {UseTestcasesTableResult} from "../hooks/types"
 import {groupColumns} from "../utils/groupColumns"
@@ -47,6 +47,8 @@ export interface TestcasesTableShellProps {
     onSearchChange: (term: string) => void
     header: React.ReactNode
     actions: React.ReactNode
+    /** Checkbox (default) or radio selection */
+    selectionType?: "checkbox" | "radio"
     hideControls?: boolean
     enableSelection?: boolean
     autoHeight?: boolean
@@ -89,6 +91,7 @@ export function TestcasesTableShell(props: TestcasesTableShellProps) {
         onSearchChange,
         header,
         actions,
+        selectionType = "checkbox",
         hideControls = false,
         enableSelection = mode !== "view",
         autoHeight = true,
@@ -135,6 +138,8 @@ export function TestcasesTableShell(props: TestcasesTableShellProps) {
                 ? {
                       selectedRowKeys: showRowIndex ? [] : selectedRowKeys,
                       onChange: showRowIndex ? undefined : onSelectedRowKeysChange,
+                      type: selectionType,
+                      hideSelectAll: selectionType === "radio",
                       columnWidth: 48,
                       fixed: "left" as const,
                       columnTitle: showRowIndex ? (

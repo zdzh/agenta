@@ -150,6 +150,17 @@ const config: Config = {
             },
           },
         },
+        {
+          type: "docSidebar",
+          sidebarId: "administrationSidebar",
+          position: "left",
+          label: "Enterprise",
+          customProps: {
+            icon: {
+              name: "shield",
+            },
+          },
+        },
 
         // {
         //   to: "https://github.com/orgs/Agenta-AI/projects/13/views/1",
@@ -377,6 +388,11 @@ const config: Config = {
           {
             from: "/self-host/applying-schema-migration",
             to: "/self-host/upgrading",
+          },
+          // FAQ restructure redirects
+          {
+            from: "/misc/faq",
+            to: "/faq",
           },
           // Prompt Engineering restructure redirects
           {

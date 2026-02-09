@@ -3,7 +3,7 @@ from os import getenv
 from typing import Any, Callable, Optional
 
 import httpx
-from agenta.client.client import AgentaApi, AsyncAgentaApi
+from agenta.client.backend.client import AgentaApi, AsyncAgentaApi
 from agenta.sdk.contexts.routing import RoutingContext
 from agenta.sdk.tracing import Tracing
 from agenta.sdk.utils.globals import set_global
@@ -123,8 +123,8 @@ class AgentaSingleton:
         )
 
         if self.api_key is None:
-            log.warning(
-                "API key is required (in most cases). Please set AGENTA_API_KEY environment variable or pass api_key parameter in ag.init()."
+            log.info(
+                "Agenta -     API key: missing (if needed, set AGENTA_API_KEY environment variable or pass api_key parameter in ag.init())"
             )
 
         log.info("Agenta -     API URL: %s", self.api_url)

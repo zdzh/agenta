@@ -1,9 +1,5 @@
 import {memo, useMemo} from "react"
 
-import clsx from "clsx"
-import {useAtomValue} from "jotai"
-import {AlertCircle} from "lucide-react"
-
 import {
     CellContentPopover,
     ChatMessagesCellContent,
@@ -12,7 +8,10 @@ import {
     extractChatMessages,
     safeJsonStringify,
     tryParseJson,
-} from "@/oss/components/CellRenderers"
+} from "@agenta/ui/cell-renderers"
+import clsx from "clsx"
+import {useAtomValue} from "jotai"
+import {AlertCircle} from "lucide-react"
 
 import type {EvaluationTableColumn} from "../../atoms/table"
 import useScenarioCellValue from "../../hooks/useScenarioCellValue"
@@ -192,7 +191,7 @@ const PreviewEvaluationInvocationCell = ({
 
         const errorCopyContent = `${stepError?.message}${stepError?.stacktrace ? `\n${stepError?.stacktrace}` : ""}`
         return (
-            <CellContentPopover content={errorPopoverContent} copyContent={errorCopyContent}>
+            <CellContentPopover fullContent={errorPopoverContent} copyText={errorCopyContent}>
                 <div
                     ref={ref}
                     className={clsx(CONTAINER_CLASS, "!justify-between")}
