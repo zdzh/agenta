@@ -1,10 +1,14 @@
 import json
 import math
+import os
 import re
+import socket
+import ipaddress
 import traceback
 from difflib import SequenceMatcher
 from json import dumps, loads
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Set, Union
+from urllib.parse import urlparse
 
 import httpx
 
@@ -22,7 +26,6 @@ from agenta.sdk.litellm import mockllm
 from agenta.sdk.types import PromptTemplate, Message
 from agenta.sdk.managers.secrets import SecretsManager
 from agenta.sdk.decorators.tracing import instrument
-from agenta.sdk.litellm.litellm import litellm_handler
 from agenta.sdk.models.shared import Data
 from agenta.sdk.workflows.sandbox import execute_code_safely
 from agenta.sdk.workflows.templates import EVALUATOR_TEMPLATES
@@ -49,21 +52,67 @@ from agenta.sdk.workflows.errors import (
 
 log = get_module_logger(__name__)
 
+_WEBHOOK_RESPONSE_MAX_BYTES = 1 * 1024 * 1024.0  # 1 MB
+_WEBHOOK_ALLOW_INSECURE = (
+    os.getenv("AGENTA_WEBHOOK_ALLOW_INSECURE") or "true"
+).lower() in {"true", "1", "t", "y", "yes", "on", "enable", "enabled"}
 
-def _configure_litellm():
-    """Lazy configuration of litellm - only imported when needed."""
-    litellm = _load_litellm()
-    if not litellm:
-        raise ImportError("litellm is required for completion handling.")
 
-    litellm.logging = False
-    litellm.set_verbose = False
-    litellm.drop_params = True
-    # litellm.turn_off_message_logging = True
-    mockllm.litellm = litellm
-    litellm.callbacks = [litellm_handler()]
+def _is_blocked_ip(ip: ipaddress._BaseAddress) -> bool:
+    if _WEBHOOK_ALLOW_INSECURE:
+        return False
+    return (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_reserved
+        or ip.is_multicast
+        or ip.is_unspecified
+    )
 
-    return litellm
+
+def _validate_webhook_url(url: str) -> None:
+    if not url:
+        raise ValueError("Webhook URL is required.")
+
+    parsed = urlparse(url)
+    scheme = parsed.scheme.lower()
+    if scheme not in {"http", "https"}:
+        raise ValueError("Webhook URL must use http or https.")
+    if scheme == "http" and not _WEBHOOK_ALLOW_INSECURE:
+        raise ValueError("Webhook URL must use https.")
+    if not parsed.netloc:
+        raise ValueError("Webhook URL must include a host.")
+    if parsed.username or parsed.password:
+        raise ValueError("Webhook URL must not include credentials.")
+
+    hostname = (parsed.hostname or "").lower()
+    if not hostname:
+        raise ValueError("Webhook URL must include a valid hostname.")
+    if (
+        hostname in {"localhost", "localhost.localdomain"}
+        and not _WEBHOOK_ALLOW_INSECURE
+    ):
+        raise ValueError("Webhook URL hostname is not allowed.")
+
+    try:
+        ip = ipaddress.ip_address(hostname)
+        if _is_blocked_ip(ip):
+            raise ValueError("Webhook URL resolves to a blocked IP range.")
+        return
+    except ValueError:
+        pass
+
+    try:
+        addresses = {
+            ipaddress.ip_address(info[4][0])
+            for info in socket.getaddrinfo(hostname, None)
+        }
+    except socket.gaierror as exc:
+        raise ValueError("Webhook URL hostname could not be resolved.") from exc
+
+    if not addresses or any(_is_blocked_ip(ip) for ip in addresses):
+        raise ValueError("Webhook URL resolves to a blocked IP range.")
 
 
 async def _compute_embedding(openai: Any, model: str, input: str) -> List[float]:
@@ -701,6 +750,14 @@ async def auto_webhook_test_v0(
         raise MissingConfigurationParameterV0Error(path="webhook_url")
 
     webhook_url = str(parameters["webhook_url"])
+    try:
+        _validate_webhook_url(webhook_url)
+    except ValueError as exc:
+        raise InvalidConfigurationParameterV0Error(
+            path="webhook_url",
+            expected="http/https URL",
+            got=webhook_url,
+        ) from exc
 
     if "correct_answer_key" not in parameters:
         raise MissingConfigurationParameterV0Error(path="correct_answer_key")
@@ -750,6 +807,7 @@ async def auto_webhook_test_v0(
             response = await client.post(
                 url=webhook_url,
                 json=json_payload,
+                timeout=httpx.Timeout(10.0, connect=5.0),
             )
         except Exception as e:
             raise WebhookClientV0Error(
@@ -757,17 +815,27 @@ async def auto_webhook_test_v0(
             ) from e
 
         if response.status_code != 200:
+            try:
+                message = response.json()
+            except Exception:
+                message = response.text
             raise WebhookServerV0Error(
                 code=response.status_code,
-                message=response.json(),
+                message=message,
             )
 
+        content_length = response.headers.get("content-length")
+        if content_length and int(content_length) > _WEBHOOK_RESPONSE_MAX_BYTES:
+            raise WebhookClientV0Error(message="Webhook response exceeded size limit.")
+
+        response_bytes = response.content
+        if len(response_bytes) > _WEBHOOK_RESPONSE_MAX_BYTES:
+            raise WebhookClientV0Error(message="Webhook response exceeded size limit.")
+
         try:
-            _outputs = response.json()
+            _outputs = json.loads(response_bytes)
         except Exception as e:
-            raise WebhookClientV0Error(
-                message=str(e),
-            ) from e
+            raise WebhookClientV0Error(message=str(e)) from e
     # --------------------------------------------------------------------------
 
     if isinstance(_outputs, (int, float)):
@@ -886,8 +954,6 @@ async def auto_ai_critique_v0(
     inputs: Optional[Data] = None,
     outputs: Optional[Union[Data, str]] = None,
 ) -> Any:
-    # return {"score": 0.75, "success": True}
-
     """
     AI critique evaluator for using an LLM to evaluate outputs.
 
@@ -1013,8 +1079,10 @@ async def auto_ai_critique_v0(
 
     _outputs = None
 
-    # Lazy import and configure litellm
-    litellm = _configure_litellm()
+    # Lazy import litellm (configuration is done automatically in _load_litellm)
+    litellm = _load_litellm()
+    if not litellm:
+        raise ImportError("litellm is required for completion handling.")
 
     # --------------------------------------------------------------------------
     litellm.openai_key = openai_api_key
@@ -1101,7 +1169,8 @@ async def auto_ai_critique_v0(
 
     try:
         _outputs = json.loads(_outputs)
-    except:
+    except Exception:
+        log.warning("LLM output is not valid JSON, using raw output.", exc_info=True)
         pass
 
     if isinstance(_outputs, (int, float)):
@@ -1843,6 +1912,37 @@ class SinglePromptConfig(BaseModel):
     )
 
 
+def _apply_responses_bridge_if_needed(
+    formatted_prompt: PromptTemplate, provider_settings: Dict
+) -> Dict:
+    """
+    Checks if web_search_preview tool is present and applies responses bridge if needed.
+
+    If a web_search_preview, code_execution, or mcp tool is detected, this function
+    modifies the provider_settings to use the responses bridge by prepending
+    'openai/responses/' to the model name.
+
+    Args:
+        formatted_prompt: The formatted prompt template containing LLM config and tools
+        provider_settings: The provider settings dictionary that may be modified
+
+    Returns:
+        The provider_settings dictionary, potentially modified to use responses bridge
+    """
+    tools = formatted_prompt.llm_config.tools
+    if tools:
+        for tool in tools:
+            if isinstance(tool, dict) and tool.get("type") in [
+                "web_search_preview",
+                "code_execution",
+                "mcp",
+            ]:
+                model_val = provider_settings.get("model")
+                if model_val and "/" not in model_val:
+                    provider_settings["model"] = f"openai/responses/{model_val}"
+    return provider_settings
+
+
 @instrument()
 async def completion_v0(
     parameters: Data,
@@ -1876,11 +1976,17 @@ async def completion_v0(
     if not provider_settings:
         raise InvalidSecretsV0Error(expected="dict", got=provider_settings)
 
+    formatted_prompt = config.prompt.format(**inputs)
+
+    provider_settings = _apply_responses_bridge_if_needed(
+        formatted_prompt, provider_settings
+    )
+
     with mockllm.user_aws_credentials_from(provider_settings):
         response = await mockllm.acompletion(
             **{
                 k: v
-                for k, v in config.prompt.format(**inputs).to_openai_kwargs().items()
+                for k, v in formatted_prompt.to_openai_kwargs().items()
                 if k != "model"
             },
             **provider_settings,
@@ -1935,6 +2041,10 @@ async def chat_v0(
     if not provider_settings:
         raise InvalidSecretsV0Error(expected="dict", got=provider_settings)
 
+    provider_settings = _apply_responses_bridge_if_needed(
+        formatted_prompt, provider_settings
+    )
+
     with mockllm.user_aws_credentials_from(provider_settings):
         response = await mockllm.acompletion(
             **{
@@ -1944,3 +2054,81 @@ async def chat_v0(
         )
 
     return response.choices[0].message.model_dump(exclude_none=True)  # type: ignore
+
+
+@instrument()
+async def hook_v0(
+    parameters: Optional[Data] = None,
+    inputs: Optional[Data] = None,
+) -> Any:
+    """
+    Webhook-based application handler for CUSTOM app types.
+
+    Forwards the request to an external webhook URL and returns the response.
+    The webhook URL is read from the workflow interface (``url`` field in
+    revision data), not from ``parameters``.
+
+    Args:
+        parameters: Configuration parameters forwarded to the webhook.
+        inputs: Inputs to forward to the webhook.
+
+    Returns:
+        The response from the webhook.
+    """
+    from agenta.sdk.contexts.running import RunningContext
+
+    ctx = RunningContext.get()
+    webhook_url = ctx.interface.url if ctx.interface else None
+
+    if not webhook_url:
+        raise MissingConfigurationParameterV0Error(path="url")
+
+    webhook_url = str(webhook_url)
+    try:
+        _validate_webhook_url(webhook_url)
+    except ValueError as exc:
+        raise InvalidConfigurationParameterV0Error(
+            path="url",
+            expected="http/https URL",
+            got=webhook_url,
+        ) from exc
+
+    json_payload = {
+        "inputs": inputs or {},
+        "parameters": parameters or {},
+    }
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(
+                url=webhook_url,
+                json=json_payload,
+                timeout=httpx.Timeout(30.0, connect=5.0),
+            )
+        except Exception as e:
+            raise WebhookClientV0Error(
+                message=str(e),
+            ) from e
+
+        if response.status_code != 200:
+            try:
+                message = response.json()
+            except Exception:
+                message = response.text
+            raise WebhookServerV0Error(
+                code=response.status_code,
+                message=message,
+            )
+
+        content_length = response.headers.get("content-length")
+        if content_length and int(content_length) > _WEBHOOK_RESPONSE_MAX_BYTES:
+            raise WebhookClientV0Error(message="Webhook response exceeded size limit.")
+
+        response_bytes = response.content
+        if len(response_bytes) > _WEBHOOK_RESPONSE_MAX_BYTES:
+            raise WebhookClientV0Error(message="Webhook response exceeded size limit.")
+
+        try:
+            return json.loads(response_bytes)
+        except Exception:
+            return response_bytes.decode("utf-8")

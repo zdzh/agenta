@@ -14,6 +14,64 @@ import type {
 
 const USEABLE_METRIC_TYPES = ["number", "integer", "float", "boolean", "string", "array"]
 
+const getOutputsSchema = (evaluator: EvaluatorDto) => {
+    const schemaOutputs = evaluator.data?.schemas?.outputs
+    if (schemaOutputs && typeof schemaOutputs === "object") {
+        return schemaOutputs
+    }
+    return evaluator.data?.service?.format?.properties?.outputs ?? {}
+}
+
+const inferFieldType = (value: unknown): AnnotationMetricField | null => {
+    if (value === null || value === undefined) {
+        return {value: null, type: "string"}
+    }
+    if (typeof value === "boolean") {
+        return {value, type: "boolean"}
+    }
+    if (typeof value === "number") {
+        return {value, type: Number.isInteger(value) ? "integer" : "number"}
+    }
+    if (typeof value === "string") {
+        return {value, type: "string"}
+    }
+    if (Array.isArray(value)) {
+        const sample = value.find((entry) => entry !== null && entry !== undefined)
+        const itemType =
+            typeof sample === "boolean"
+                ? "boolean"
+                : typeof sample === "number"
+                  ? Number.isInteger(sample)
+                      ? "integer"
+                      : "number"
+                  : typeof sample === "string"
+                    ? "string"
+                    : "string"
+        return {
+            value,
+            type: "array",
+            items: {
+                type: itemType,
+                enum: [],
+            },
+        }
+    }
+    if (typeof value === "object") {
+        return {value: JSON.stringify(value), type: "string"}
+    }
+    return null
+}
+
+const inferFieldsFromOutputs = (outputs: Record<string, unknown>) => {
+    const fields: Record<string, AnnotationMetricField> = {}
+    for (const [key, value] of Object.entries(outputs)) {
+        const field = inferFieldType(value)
+        if (!field) continue
+        fields[key] = field
+    }
+    return fields
+}
+
 // ============================================================================
 // Utility Functions
 // ============================================================================
@@ -21,7 +79,7 @@ const USEABLE_METRIC_TYPES = ["number", "integer", "float", "boolean", "string",
 function getMetricFieldsFromEvaluator(
     evaluator: EvaluatorDto,
 ): Record<string, AnnotationMetricField> {
-    const schema = evaluator.data?.service?.format?.properties?.outputs?.properties ?? {}
+    const schema = getOutputsSchema(evaluator)?.properties ?? {}
     const fields: Record<string, AnnotationMetricField> = {}
 
     for (const [key, rawProp] of Object.entries(schema)) {
@@ -31,9 +89,29 @@ function getMetricFieldsFromEvaluator(
             ? ((rawProp as Record<string, unknown>).anyOf as unknown[])[0]
             : rawProp
         const propObj = prop as Record<string, unknown>
-        const type = propObj?.type as string | undefined
+        const rawType = propObj?.type as string | string[] | undefined
 
-        if (!type) continue
+        if (!rawType) continue
+
+        if (Array.isArray(rawType)) {
+            const enumValues =
+                (propObj.enum as unknown[] | undefined)?.filter(
+                    (value) => value !== null && value !== undefined && value !== "",
+                ) || []
+            const filteredTypes = rawType.filter((value) => value !== "null")
+            if (filteredTypes.length === 0) continue
+            const baseType = filteredTypes[0]
+            fields[key] = {
+                value: baseType === "string" ? "" : null,
+                type: filteredTypes,
+                enum: enumValues as string[],
+                minimum: propObj.minimum as number | undefined,
+                maximum: propObj.maximum as number | undefined,
+            }
+            continue
+        }
+
+        const type = rawType
 
         if (type === "array") {
             const items = propObj.items as Record<string, unknown> | undefined
@@ -62,7 +140,7 @@ function getMetricsFromAnnotation(
     annotation: AnnotationDto,
     evaluator: EvaluatorDto,
 ): Record<string, AnnotationMetricField> {
-    const schema = evaluator.data?.service?.format?.properties?.outputs?.properties ?? {}
+    const schema = getOutputsSchema(evaluator)?.properties ?? {}
     const rawOutputs = (annotation.data?.outputs as Record<string, unknown>) ?? {}
 
     // Flatten nested structures - outputs can be at top level or nested under metrics/notes/extra
@@ -86,6 +164,10 @@ function getMetricsFromAnnotation(
         }
     }
 
+    if (!Object.keys(schema).length) {
+        return inferFieldsFromOutputs(outputs)
+    }
+
     const fields: Record<string, AnnotationMetricField> = {}
 
     for (const [key, rawProp] of Object.entries(schema)) {
@@ -95,13 +177,34 @@ function getMetricsFromAnnotation(
             ? ((rawProp as Record<string, unknown>).anyOf as unknown[])[0]
             : rawProp
         const propObj = prop as Record<string, unknown>
-        const type = propObj?.type as string | undefined
+        const rawType = propObj?.type as string | string[] | undefined
 
-        if (!type) continue
+        if (!rawType) continue
 
         // Check if value exists - be careful with boolean false which is falsy but valid
         const hasValue = key in outputs
         const value = hasValue ? outputs[key] : undefined
+
+        if (Array.isArray(rawType)) {
+            const enumValues =
+                (propObj.enum as unknown[] | undefined)?.filter(
+                    (item) => item !== null && item !== undefined && item !== "",
+                ) || []
+            const filteredTypes = rawType.filter((item) => item !== "null")
+            if (filteredTypes.length === 0) continue
+            const baseType = filteredTypes[0]
+            const defaultValue = baseType === "string" ? "" : null
+            fields[key] = {
+                value: hasValue ? value : defaultValue,
+                type: filteredTypes,
+                enum: enumValues as string[],
+                minimum: propObj.minimum as number | undefined,
+                maximum: propObj.maximum as number | undefined,
+            }
+            continue
+        }
+
+        const type = rawType
 
         if (type === "array") {
             const items = propObj.items as Record<string, unknown> | undefined
@@ -159,12 +262,12 @@ export function useAnnotationState({
 
     // Track the scenarioId to reset edits when it changes
     const prevScenarioIdRef = useRef(scenarioId)
-    if (prevScenarioIdRef.current !== scenarioId) {
+    useEffect(() => {
+        if (prevScenarioIdRef.current === scenarioId) return
         prevScenarioIdRef.current = scenarioId
-        // Reset edits when scenario changes (synchronous state update)
         setMetricEdits({})
         setErrors([])
-    }
+    }, [scenarioId])
 
     // Track previous baseline to detect when it updates after a save
     const prevBaselineRef = useRef<string>("")
@@ -174,6 +277,7 @@ export function useAnnotationState({
         const map = new Map<string, EvaluatorDto>()
         for (const e of evaluators) {
             if (e.slug) map.set(e.slug, e)
+            if (e.id) map.set(e.id, e)
         }
         return map
     }, [evaluators])
@@ -184,27 +288,35 @@ export function useAnnotationState({
 
         // Add metrics from existing annotations
         for (const ann of annotations) {
-            const slug = ann.references?.evaluator?.slug
-            if (!slug) continue
+            const evaluatorRef = ann.references?.evaluator
+            const evaluatorKey = evaluatorRef?.slug ?? evaluatorRef?.id
+            if (!evaluatorKey) continue
 
-            const evaluator = evaluatorMap.get(slug)
+            const evaluator = evaluatorMap.get(evaluatorKey)
             if (!evaluator) continue
+
+            const slug = evaluator.slug ?? evaluatorKey
+            if (!slug) continue
 
             result[slug] = getMetricsFromAnnotation(ann, evaluator)
         }
 
         // Add empty metrics for unannotated evaluators
-        const annotatedSlugs = new Set(
-            annotations.map((a) => a.references?.evaluator?.slug).filter(Boolean),
+        const annotatedKeys = new Set(
+            annotations
+                .flatMap((a) => [a.references?.evaluator?.slug, a.references?.evaluator?.id])
+                .filter(Boolean) as string[],
         )
-        for (const [slug, evaluator] of evaluatorMap) {
-            if (!annotatedSlugs.has(slug)) {
-                result[slug] = getMetricFieldsFromEvaluator(evaluator)
-            }
+        for (const evaluator of evaluators) {
+            const slug = evaluator.slug
+            if (!slug) continue
+            if (annotatedKeys.has(slug)) continue
+            if (evaluator.id && annotatedKeys.has(evaluator.id)) continue
+            result[slug] = getMetricFieldsFromEvaluator(evaluator)
         }
 
         return result
-    }, [annotations, evaluatorMap])
+    }, [annotations, evaluatorMap, evaluators])
 
     // When baseline updates (e.g., after save + refetch), clear edits that now match baseline
     // This allows new changes to be detected properly
@@ -297,8 +409,7 @@ export function useAnnotationState({
             const slug = evaluator.slug
             if (!slug) continue
 
-            const requiredKeys: string[] =
-                evaluator.data?.service?.format?.properties?.outputs?.required ?? []
+            const requiredKeys: string[] = getOutputsSchema(evaluator)?.required ?? []
 
             if (requiredKeys.length === 0) continue
 
@@ -316,12 +427,19 @@ export function useAnnotationState({
 
     // Get unannotated evaluator slugs
     const unannotatedSlugs = useMemo((): string[] => {
-        const annotatedSlugs = new Set(
-            annotations.map((a) => a.references?.evaluator?.slug).filter(Boolean),
+        const annotatedKeys = new Set(
+            annotations
+                .flatMap((a) => [a.references?.evaluator?.slug, a.references?.evaluator?.id])
+                .filter(Boolean) as string[],
         )
         return evaluators
-            .map((e) => e.slug)
-            .filter((slug): slug is string => Boolean(slug) && !annotatedSlugs.has(slug))
+            .filter((e) => {
+                if (!e.slug) return false
+                if (annotatedKeys.has(e.slug)) return false
+                if (e.id && annotatedKeys.has(e.id)) return false
+                return true
+            })
+            .map((e) => e.slug as string)
     }, [annotations, evaluators])
 
     // Extract trace/span IDs
@@ -393,7 +511,11 @@ export function useAnnotationState({
 
         // Fallback: try to find from annotations
         for (const ann of annotations) {
-            const slug = ann.references?.evaluator?.slug
+            const evaluatorRef = ann.references?.evaluator
+            const evaluatorKey = evaluatorRef?.slug ?? evaluatorRef?.id
+            const slug = evaluatorKey
+                ? (evaluatorMap.get(evaluatorKey)?.slug ?? evaluatorKey)
+                : null
             if (!slug || map[slug]) continue // Skip if already found
 
             // Check if annotation has a step reference
@@ -404,7 +526,7 @@ export function useAnnotationState({
         }
 
         return map
-    }, [allSteps, annotations])
+    }, [allSteps, annotations, evaluatorMap])
 
     // Update a single metric field
     const updateMetric = useCallback(

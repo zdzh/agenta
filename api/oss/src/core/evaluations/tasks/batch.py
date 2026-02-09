@@ -7,7 +7,7 @@ from json import dumps
 from redis.asyncio import Redis
 from fastapi import Request
 
-from oss.src.utils.helpers import parse_url, get_slug_from_name_and_id
+
 from oss.src.utils.logging import get_module_logger
 from oss.src.utils.env import env
 from oss.src.utils.common import is_ee
@@ -64,7 +64,6 @@ from oss.src.core.annotations.service import AnnotationsService
 # from oss.src.apis.fastapi.tracing.utils import make_hash_id
 from oss.src.apis.fastapi.tracing.router import TracingRouter
 from oss.src.apis.fastapi.testsets.router import SimpleTestsetsRouter
-from oss.src.apis.fastapi.evaluators.router import SimpleEvaluatorsRouter
 from oss.src.apis.fastapi.annotations.router import AnnotationsRouter
 from oss.src.tasks.asyncio.tracing.worker import TracingWorker
 
@@ -157,8 +156,8 @@ tracing_service = TracingService(
 )
 
 # Redis client and TracingWorker for publishing spans to Redis Streams
-if env.REDIS_URI_DURABLE:
-    redis_client = Redis.from_url(env.REDIS_URI_DURABLE, decode_responses=False)
+if env.redis.uri_durable:
+    redis_client = Redis.from_url(env.redis.uri_durable, decode_responses=False)
     tracing_worker = TracingWorker(
         service=tracing_service,
         redis_client=redis_client,
@@ -183,11 +182,6 @@ testsets_service = TestsetsService(
 
 simple_testsets_service = SimpleTestsetsService(
     testsets_service=testsets_service,
-)
-
-testsets_service = TestsetsService(
-    testsets_dao=testsets_dao,
-    testcases_service=testcases_service,
 )
 
 workflows_service = WorkflowsService(
@@ -220,10 +214,6 @@ tracing_router = TracingRouter(
 
 simple_testsets_router = SimpleTestsetsRouter(
     simple_testsets_service=simple_testsets_service,
-)  # TODO: REMOVE/REPLACE ONCE TRANSFER IS MOVED TO 'core'
-
-simple_evaluators_router = SimpleEvaluatorsRouter(
-    simple_evaluators_service=simple_evaluators_service,
 )  # TODO: REMOVE/REPLACE ONCE TRANSFER IS MOVED TO 'core'
 
 annotations_service = AnnotationsService(

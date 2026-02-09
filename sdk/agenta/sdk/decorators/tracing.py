@@ -77,7 +77,7 @@ class instrument:  # pylint: disable=invalid-name
             @wraps(handler)
             def astream_wrapper(*args, **kwargs):
                 with tracing_context_manager(context=TracingContext.get()):
-                    # debug_otel_context("[BEFORE STREAM] [BEFORE SETUP]")
+                    # debug_otel_context("[ASYNC] [BEFORE STREAM] [BEFORE SETUP]")
 
                     self._parse_type_and_kind()
 
@@ -102,9 +102,9 @@ class instrument:  # pylint: disable=invalid-name
                                 name=handler.__name__,
                                 kind=self.kind,
                                 context=ctx,
-                            ):
-                                self._set_link()
-                                self._pre_instrument(handler, *args, **kwargs)
+                            ) as span:
+                                self._set_link(span)
+                                self._pre_instrument(span, handler, *args, **kwargs)
 
                                 _result = []
 
@@ -125,7 +125,7 @@ class instrument:  # pylint: disable=invalid-name
                                     else:
                                         result = _result
 
-                                    self._post_instrument(result)
+                                    self._post_instrument(span, result)
 
                         finally:
                             # debug_otel_context("[WITHIN STREAM] [BEFORE DETACH]")
@@ -147,6 +147,8 @@ class instrument:  # pylint: disable=invalid-name
             @wraps(handler)
             def stream_wrapper(*args, **kwargs):
                 with tracing_context_manager(context=TracingContext.get()):
+                    # debug_otel_context("[.SYNC] [BEFORE STREAM] [BEFORE SETUP]")
+
                     self._parse_type_and_kind()
 
                     token = self._attach_baggage()
@@ -159,10 +161,10 @@ class instrument:  # pylint: disable=invalid-name
                                 name=handler.__name__,
                                 kind=self.kind,
                                 context=ctx,
-                            ):
-                                self._set_link()
+                            ) as span:
+                                self._set_link(span)
 
-                                self._pre_instrument(handler, *args, **kwargs)
+                                self._pre_instrument(span, handler, *args, **kwargs)
 
                                 _result = []
 
@@ -191,7 +193,7 @@ class instrument:  # pylint: disable=invalid-name
                                     else:
                                         result = _result
 
-                                    self._post_instrument(result)
+                                    self._post_instrument(span, result)
 
                                 return gen_return
 
@@ -210,6 +212,8 @@ class instrument:  # pylint: disable=invalid-name
             @wraps(handler)
             async def awrapper(*args, **kwargs):
                 with tracing_context_manager(context=TracingContext.get()):
+                    # debug_otel_context("[ASYNC] [BEFORE BATCH] [BEFORE SETUP]")
+
                     self._parse_type_and_kind()
 
                     token = self._attach_baggage()
@@ -221,14 +225,14 @@ class instrument:  # pylint: disable=invalid-name
                             name=handler.__name__,
                             kind=self.kind,
                             context=ctx,
-                        ):
-                            self._set_link()
+                        ) as span:
+                            self._set_link(span)
 
-                            self._pre_instrument(handler, *args, **kwargs)
+                            self._pre_instrument(span, handler, *args, **kwargs)
 
                             result = await handler(*args, **kwargs)
 
-                            self._post_instrument(result)
+                            self._post_instrument(span, result)
 
                     finally:
                         self._detach_baggage(token)
@@ -243,6 +247,8 @@ class instrument:  # pylint: disable=invalid-name
         @wraps(handler)
         def wrapper(*args, **kwargs):
             with tracing_context_manager(context=TracingContext.get()):
+                # debug_otel_context("[.SYNC] [BEFORE BATCH] [BEFORE SETUP]")
+
                 self._parse_type_and_kind()
 
                 token = self._attach_baggage()
@@ -254,14 +260,14 @@ class instrument:  # pylint: disable=invalid-name
                         name=handler.__name__,
                         kind=self.kind,
                         context=ctx,
-                    ):
-                        self._set_link()
+                    ) as span:
+                        self._set_link(span)
 
-                        self._pre_instrument(handler, *args, **kwargs)
+                        self._pre_instrument(span, handler, *args, **kwargs)
 
                         result = handler(*args, **kwargs)
 
-                        self._post_instrument(result)
+                        self._post_instrument(span, result)
 
                 finally:
                     self._detach_baggage(token)
@@ -289,8 +295,11 @@ class instrument:  # pylint: disable=invalid-name
 
             return traceparent
 
-    def _set_link(self):
-        span = ag.tracing.get_current_span()
+    def _set_link(self, span):
+        from agenta.sdk.tracing.spans import CustomSpan
+
+        if not isinstance(span, CustomSpan):
+            span = CustomSpan(span)
 
         context = TracingContext.get()
 
@@ -351,11 +360,15 @@ class instrument:  # pylint: disable=invalid-name
 
     def _pre_instrument(
         self,
+        span,
         handler,
         *args,
         **kwargs,
     ):
-        span = ag.tracing.get_current_span()
+        from agenta.sdk.tracing.spans import CustomSpan
+
+        if not isinstance(span, CustomSpan):
+            span = CustomSpan(span)
 
         context = TracingContext.get()
 
@@ -394,9 +407,13 @@ class instrument:  # pylint: disable=invalid-name
 
     def _post_instrument(
         self,
+        span,
         result,
     ):
-        span = ag.tracing.get_current_span()
+        from agenta.sdk.tracing.spans import CustomSpan
+
+        if not isinstance(span, CustomSpan):
+            span = CustomSpan(span)
 
         with suppress():
             cost = None

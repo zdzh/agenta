@@ -1,10 +1,10 @@
 import {useCallback, useEffect, useMemo, useState} from "react"
 
+import {message} from "@agenta/ui/app-message"
 import {DownOutlined} from "@ant-design/icons"
 import {Button, Form, Input, Tag, Typography} from "antd"
 import {useAtomValue, useSetAtom} from "jotai"
 
-import {message} from "@/oss/components/AppMessageContext"
 import {invalidateEvaluationRunsTableAtom} from "@/oss/components/EvaluationRunsTablePOC/atoms/tableStore"
 import ReadOnlyBox from "@/oss/components/pages/evaluations/onlineEvaluation/components/ReadOnlyBox"
 import axios from "@/oss/lib/api/assets/axiosConfig"
@@ -21,6 +21,7 @@ const {Text} = Typography
 interface GeneralSectionProps {
     runId: string
     showActions?: boolean
+    showHeader?: boolean
 }
 
 const GeneralSectionHeader = ({runId, index}: {runId: string; index: number}) => {
@@ -31,7 +32,7 @@ const GeneralSectionHeader = ({runId, index}: {runId: string; index: number}) =>
     )
 }
 
-const GeneralSection = ({runId, showActions = true}: GeneralSectionProps) => {
+const GeneralSection = ({runId, showActions = true, showHeader = true}: GeneralSectionProps) => {
     const [collapsed, setCollapsed] = useState(false)
     const projectId = useAtomValue(effectiveProjectIdAtom)
     const invalidateRunsTable = useSetAtom(invalidateEvaluationRunsTableAtom)
@@ -116,18 +117,22 @@ const GeneralSection = ({runId, showActions = true}: GeneralSectionProps) => {
 
     return (
         <Form layout="vertical" requiredMark={false}>
-            <SectionHeaderRow
-                left={<GeneralSectionHeader runId={runId} />}
-                right={
-                    <Button
-                        type="text"
-                        size="small"
-                        icon={<DownOutlined rotate={collapsed ? -90 : 0} style={{fontSize: 12}} />}
-                        onClick={() => setCollapsed((v) => !v)}
-                    />
-                }
-            />
-            {!collapsed ? (
+            {showHeader ? (
+                <SectionHeaderRow
+                    left={<GeneralSectionHeader runId={runId} />}
+                    right={
+                        <Button
+                            type="text"
+                            size="small"
+                            icon={
+                                <DownOutlined rotate={collapsed ? -90 : 0} style={{fontSize: 12}} />
+                            }
+                            onClick={() => setCollapsed((v) => !v)}
+                        />
+                    }
+                />
+            ) : null}
+            {!collapsed || !showHeader ? (
                 <div className="flex flex-col mt-1 gap-1">
                     <Form.Item label="Name" style={{marginBottom: 12}}>
                         <Input
