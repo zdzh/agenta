@@ -12,6 +12,7 @@ class SyncConfig(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     project_id: Mapped[str] = mapped_column(String(128), index=True)
     agenta_app_id: Mapped[str] = mapped_column(String(128), index=True)
+    environment: Mapped[str] = mapped_column(String(64), index=True, default="development")
     agenta_api_base: Mapped[str] = mapped_column(String(1024))
     agenta_api_key: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     external_api_base: Mapped[str] = mapped_column(String(1024))

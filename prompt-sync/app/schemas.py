@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 class SyncConfigCreate(BaseModel):
     project_id: str
     agenta_app_id: str
+    environment: str = "development"
     agenta_api_base: str
     agenta_api_key: str | None = None
     external_api_base: str
@@ -36,6 +37,7 @@ class SyncConfigResponse(BaseModel):
     id: int
     project_id: str
     agenta_app_id: str
+    environment: str
     agenta_api_base: str
     external_api_base: str
     external_pull_path: str

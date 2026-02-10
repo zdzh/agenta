@@ -17,6 +17,7 @@ def _config_to_dict(cfg: SyncConfig) -> dict[str, Any]:
         "id": cfg.id,
         "project_id": cfg.project_id,
         "agenta_app_id": cfg.agenta_app_id,
+        "environment": cfg.environment,
         "agenta_api_base": cfg.agenta_api_base,
         "external_api_base": cfg.external_api_base,
         "external_pull_path": cfg.external_pull_path,
@@ -31,12 +32,30 @@ def _config_to_dict(cfg: SyncConfig) -> dict[str, Any]:
     }
 
 
-def get_config_by_scope(db: Session, *, project_id: str, agenta_app_id: str) -> SyncConfig:
+def get_config_by_scope_and_environment(
+    db: Session, *, project_id: str, agenta_app_id: str, environment: str
+) -> SyncConfig:
     stmt = select(SyncConfig).where(
         SyncConfig.project_id == project_id,
         SyncConfig.agenta_app_id == agenta_app_id,
+        SyncConfig.environment == environment,
     )
     config = db.execute(stmt).scalar_one_or_none()
+    if config is None:
+        raise ValueError("sync config not found for this project/app/environment")
+    return config
+
+
+def get_latest_config_by_scope(db: Session, *, project_id: str, agenta_app_id: str) -> SyncConfig:
+    stmt = (
+        select(SyncConfig)
+        .where(
+            SyncConfig.project_id == project_id,
+            SyncConfig.agenta_app_id == agenta_app_id,
+        )
+        .order_by(desc(SyncConfig.updated_at))
+    )
+    config = db.execute(stmt).scalars().first()
     if config is None:
         raise ValueError("sync config not found for this project/app")
     return config
@@ -47,14 +66,16 @@ def create_config(db: Session, payload: SyncConfigCreate) -> dict[str, Any]:
         select(SyncConfig).where(
             SyncConfig.project_id == payload.project_id,
             SyncConfig.agenta_app_id == payload.agenta_app_id,
+            SyncConfig.environment == payload.environment,
         )
     ).scalar_one_or_none()
     if existing:
-        raise ValueError("sync config already exists for this project/app")
+        raise ValueError("sync config already exists for this project/app/environment")
 
     config = SyncConfig(
         project_id=payload.project_id,
         agenta_app_id=payload.agenta_app_id,
+        environment=payload.environment,
         agenta_api_base=payload.agenta_api_base.rstrip("/"),
         agenta_api_key=payload.agenta_api_key,
         external_api_base=payload.external_api_base.rstrip("/"),
@@ -182,7 +203,12 @@ async def pull_to_agenta(
     variant_id: str | None,
     force: bool,
 ) -> dict[str, Any]:
-    config = get_config_by_scope(db, project_id=project_id, agenta_app_id=agenta_app_id)
+    config = get_config_by_scope_and_environment(
+        db,
+        project_id=project_id,
+        agenta_app_id=agenta_app_id,
+        environment=environment,
+    )
     mapped_env = _map_environment(config, environment)
 
     agenta = AgentaClient(
@@ -211,11 +237,15 @@ async def pull_to_agenta(
     if "params" not in incoming:
         incoming = {"params": incoming}
 
+    variant_slug = incoming.get("variant_slug")
+    preferred_variant_slug = (
+        variant_slug if isinstance(variant_slug, str) and variant_slug else config.default_variant_slug
+    )
     resolved_variant_id = await _ensure_variant(
         agenta=agenta,
         app_id=agenta_app_id,
         preferred_variant_id=variant_id,
-        preferred_variant_slug=incoming.get("variant_slug") or config.default_variant_slug,
+        preferred_variant_slug=preferred_variant_slug,
     )
 
     current = await agenta.fetch_config(
@@ -304,7 +334,12 @@ async def push_to_app(
     environment: str,
     agenta_revision_id: str,
 ) -> dict[str, Any]:
-    config = get_config_by_scope(db, project_id=project_id, agenta_app_id=agenta_app_id)
+    config = get_config_by_scope_and_environment(
+        db,
+        project_id=project_id,
+        agenta_app_id=agenta_app_id,
+        environment=environment,
+    )
     mapped_env = _map_environment(config, environment)
 
     agenta = AgentaClient(
@@ -366,8 +401,18 @@ async def get_deployment_status(
     *,
     project_id: str,
     agenta_app_id: str,
+    environment: str | None = None,
 ) -> list[dict[str, Any]]:
-    config = get_config_by_scope(db, project_id=project_id, agenta_app_id=agenta_app_id)
+    config = (
+        get_config_by_scope_and_environment(
+            db,
+            project_id=project_id,
+            agenta_app_id=agenta_app_id,
+            environment=environment,
+        )
+        if environment
+        else get_latest_config_by_scope(db, project_id=project_id, agenta_app_id=agenta_app_id)
+    )
     agenta = AgentaClient(
         base_url=config.agenta_api_base,
         project_id=project_id,
@@ -477,9 +522,19 @@ def list_jobs(
     *,
     project_id: str,
     agenta_app_id: str,
+    environment: str | None = None,
 ) -> list[dict[str, Any]]:
-    config = get_config_by_scope(db, project_id=project_id, agenta_app_id=agenta_app_id)
-    stmt = select(SyncJob).where(SyncJob.config_id == config.id).order_by(desc(SyncJob.created_at))
+    configs_stmt = select(SyncConfig.id).where(
+        SyncConfig.project_id == project_id,
+        SyncConfig.agenta_app_id == agenta_app_id,
+    )
+    if environment:
+        configs_stmt = configs_stmt.where(SyncConfig.environment == environment)
+    config_ids = [row[0] for row in db.execute(configs_stmt).all()]
+    if not config_ids:
+        raise ValueError("sync config not found for this project/app")
+
+    stmt = select(SyncJob).where(SyncJob.config_id.in_(config_ids)).order_by(desc(SyncJob.created_at))
     rows = db.execute(stmt).scalars().all()
     return [
         {

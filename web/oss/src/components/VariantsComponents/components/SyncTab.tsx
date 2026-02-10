@@ -2,13 +2,27 @@ import {useMemo, useState} from "react"
 
 import {EnhancedModal} from "@agenta/ui"
 import {ArrowClockwise} from "@phosphor-icons/react"
-import {Alert, Button, Form, Input, Space, Table, Tag, Typography, message} from "antd"
+import {
+    Alert,
+    Button,
+    Descriptions,
+    Form,
+    Input,
+    Select,
+    Space,
+    Table,
+    Tag,
+    Typography,
+    message,
+} from "antd"
 import {ColumnsType} from "antd/es/table"
 import useSWR from "swr"
 
 import {
     createSyncConfig,
+    fetchSyncConfigByScope,
     fetchSyncDeploymentStatus,
+    SyncConfig,
     triggerResync,
     SyncDeploymentRow,
 } from "@/oss/services/promptSync/api"
@@ -21,6 +35,7 @@ interface SyncTabProps {
 }
 
 interface CreateSyncConfigFormValues {
+    environment: string
     agenta_api_base: string
     agenta_api_key?: string
     external_api_base: string
@@ -54,6 +69,14 @@ const SyncTab = ({projectId, appId}: SyncTabProps) => {
         error,
         mutate,
     } = useSWR<SyncDeploymentRow[]>(swrKey, () => fetchSyncDeploymentStatus({projectId, appId}))
+
+    const configKey = projectId && appId ? ["prompt-sync-config", projectId, appId] : null
+    const {
+        data: syncConfig,
+        isLoading: isConfigLoading,
+        error: configError,
+        mutate: mutateConfig,
+    } = useSWR<SyncConfig[]>(configKey, () => fetchSyncConfigByScope({projectId, appId}))
 
     const errorText =
         error instanceof Error
@@ -144,13 +167,82 @@ const SyncTab = ({projectId, appId}: SyncTabProps) => {
                 <Button type="primary" onClick={() => setCreateOpen(true)}>
                     Create Sync Config
                 </Button>
-                <Button onClick={() => mutate()} disabled={isLoading}>
+                <Button
+                    onClick={async () => {
+                        await mutateConfig()
+                        await mutate()
+                    }}
+                    disabled={isLoading || isConfigLoading}
+                >
                     Refresh
                 </Button>
             </Space>
             <Typography.Text type="secondary">
                 List deployed prompt versions by environment and trigger one-click re-sync.
             </Typography.Text>
+            {configError ? (
+                <Alert
+                    type="warning"
+                    showIcon
+                    message="Sync Config 读取失败"
+                    description={
+                        configError instanceof Error
+                            ? configError.message
+                            : "无法读取当前应用的 Sync 配置"
+                    }
+                />
+            ) : null}
+            {!configError && !isConfigLoading && !syncConfig?.length ? (
+                <Alert
+                    type="info"
+                    showIcon
+                    message="当前应用还没有 Sync Config"
+                    description="点击上方 Create Sync Config 创建后，这里会展示当前配置详情。"
+                />
+            ) : null}
+            {syncConfig?.length ? (
+                <Descriptions
+                    title="当前 Sync Config"
+                    bordered
+                    size="small"
+                    column={1}
+                    items={[
+                        {
+                            label: "已配置环境",
+                            children: syncConfig.map((c) => c.environment).join(", "),
+                        },
+                    ]}
+                />
+            ) : null}
+            {syncConfig?.length ? (
+                <Table<SyncConfig>
+                    rowKey="id"
+                    size="small"
+                    pagination={false}
+                    dataSource={syncConfig}
+                    columns={[
+                        {title: "环境", dataIndex: "environment", key: "environment", width: 120},
+                        {
+                            title: "External API Base",
+                            dataIndex: "external_api_base",
+                            key: "external_api_base",
+                        },
+                        {
+                            title: "Pull Path",
+                            dataIndex: "external_pull_path",
+                            key: "external_pull_path",
+                            width: 160,
+                        },
+                        {
+                            title: "Push Path",
+                            dataIndex: "external_push_path",
+                            key: "external_push_path",
+                            width: 160,
+                        },
+                        {title: "Updated", dataIndex: "updated_at", key: "updated_at", width: 200},
+                    ]}
+                />
+            ) : null}
             {error ? <Alert type="warning" showIcon message={errorText} /> : null}
             <Table<SyncDeploymentRow>
                 rowKey="variant_id"
@@ -175,6 +267,7 @@ const SyncTab = ({projectId, appId}: SyncTabProps) => {
                     layout="vertical"
                     form={form}
                     initialValues={{
+                        environment: "development",
                         agenta_api_base: "http://api:8000",
                         external_pull_path: "/prompts/pull",
                         external_push_path: "/prompts/push",
@@ -198,6 +291,7 @@ const SyncTab = ({projectId, appId}: SyncTabProps) => {
                             await createSyncConfig({
                                 project_id: projectId,
                                 agenta_app_id: appId,
+                                environment: values.environment,
                                 agenta_api_base: values.agenta_api_base,
                                 agenta_api_key: values.agenta_api_key || null,
                                 external_api_base: values.external_api_base,
@@ -213,6 +307,7 @@ const SyncTab = ({projectId, appId}: SyncTabProps) => {
                             message.success("Sync config created")
                             setCreateOpen(false)
                             form.resetFields()
+                            await mutateConfig()
                             await mutate()
                         } catch (submitError: any) {
                             message.error(submitError?.message || "Create sync config failed")
@@ -221,6 +316,18 @@ const SyncTab = ({projectId, appId}: SyncTabProps) => {
                         }
                     }}
                 >
+                    <Form.Item
+                        label="环境"
+                        name="environment"
+                        rules={[{required: true, message: "环境必填"}]}
+                        extra="每个环境可以配置不同的 External API Base / Pull/Push Path / 鉴权头。"
+                    >
+                        <Select
+                            options={KNOWN_ENVS.map((v) => ({label: v, value: v}))}
+                            placeholder="development"
+                        />
+                    </Form.Item>
+
                     <Form.Item
                         label="Agenta API Base"
                         name="agenta_api_base"

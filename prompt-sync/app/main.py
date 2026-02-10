@@ -1,7 +1,7 @@
 from fastapi import Depends, FastAPI, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from .database import Base, engine, get_db
+from .database import get_db, init_db
 from .schemas import (
     DeploymentStatusResponse,
     JobResponse,
@@ -25,7 +25,7 @@ from .service import (
     update_config,
 )
 
-Base.metadata.create_all(bind=engine)
+init_db()
 
 app = FastAPI(title="Prompt Sync Service", version="1.0.0")
 
@@ -121,6 +121,7 @@ async def sync_resync(payload: ResyncRequest, db: Session = Depends(get_db)):
 async def deployment_status(
     project_id: str = Query(...),
     agenta_app_id: str = Query(...),
+    environment: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
     try:
@@ -128,6 +129,7 @@ async def deployment_status(
             db,
             project_id=project_id,
             agenta_app_id=agenta_app_id,
+            environment=environment,
         )
         return {"rows": rows}
     except ValueError as e:
@@ -140,9 +142,10 @@ async def deployment_status(
 def jobs(
     project_id: str = Query(...),
     agenta_app_id: str = Query(...),
+    environment: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
     try:
-        return list_jobs(db, project_id=project_id, agenta_app_id=agenta_app_id)
+        return list_jobs(db, project_id=project_id, agenta_app_id=agenta_app_id, environment=environment)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e

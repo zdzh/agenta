@@ -14,6 +14,7 @@ export interface SyncDeploymentRow {
 export interface CreateSyncConfigPayload {
     project_id: string
     agenta_app_id: string
+    environment: string
     agenta_api_base: string
     agenta_api_key?: string | null
     external_api_base: string
@@ -24,6 +25,24 @@ export interface CreateSyncConfigPayload {
     default_variant_slug?: string
     pull_transform_script?: string | null
     push_transform_script?: string | null
+}
+
+export interface SyncConfig {
+    id: number
+    project_id: string
+    agenta_app_id: string
+    environment: string
+    agenta_api_base: string
+    external_api_base: string
+    external_pull_path: string
+    external_push_path: string
+    external_auth_headers: Record<string, string>
+    environment_map: Record<string, string>
+    default_variant_slug: string
+    pull_transform_script?: string | null
+    push_transform_script?: string | null
+    created_at: string
+    updated_at: string
 }
 
 const jsonHeaders = {
@@ -87,4 +106,17 @@ export const createSyncConfig = async (payload: CreateSyncConfigPayload) => {
     }
 
     return response.json()
+}
+
+export const fetchSyncConfigByScope = async (params: {projectId: string; appId: string}) => {
+    const response = await fetch(`/sync/v1/configs`)
+    if (!response.ok) {
+        const text = await response.text()
+        throw new Error(text || "Failed to fetch sync configs")
+    }
+
+    const data = (await response.json()) as SyncConfig[]
+    return data.filter(
+        (item) => item.project_id === params.projectId && item.agenta_app_id === params.appId,
+    )
 }
