@@ -1,5 +1,6 @@
 import {AppstoreOutlined, DatabaseOutlined, GithubFilled} from "@ant-design/icons"
 import {
+    ArrowsClockwiseIcon,
     ChartDonut,
     ChartLineUp,
     Desktop,
@@ -115,6 +116,14 @@ export const useSidebarConfig = () => {
             icon: <Lightning size={14} />,
             disabled: !hasProjectURL,
             dataTour: "registry-nav",
+        },
+        {
+            key: "app-sync-link",
+            title: "Sync",
+            link: `${appURL || recentlyVisitedAppURL}/variants?tab=sync`,
+            isHidden: !currentApp && !recentlyVisitedAppId,
+            icon: <ArrowsClockwiseIcon size={14} />,
+            disabled: !hasProjectURL,
         },
         {
             key: "app-evaluations-link",

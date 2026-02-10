@@ -24,12 +24,14 @@ import {useEnvironments} from "@/oss/services/deployment/hooks/useEnvironments"
 import {useQueryParamState} from "@/oss/state/appState"
 import {deploymentRevisionsWithAppIdQueryAtomFamily} from "@/oss/state/deployment/atoms/revisions"
 import {moleculeBackedPromptsAtomFamily} from "@/oss/state/newPlayground/legacyEntityBridge"
+import {useProjectData} from "@/oss/state/project"
 
 import DeploymentsDashboard from "../DeploymentsDashboard"
 import {envRevisionsAtom} from "../DeploymentsDashboard/atoms"
 import {openDeploymentsDrawerAtom} from "../DeploymentsDashboard/modals/store/deploymentDrawerStore"
 import DeployVariantButton from "../Playground/Components/Modals/DeployVariantModal/assets/DeployVariantButton"
 
+import SyncTab from "./components/SyncTab"
 import {
     comparisonAllRevisionsAtom,
     comparisonSelectionScopeAtom,
@@ -42,6 +44,7 @@ import VariantsTable from "./Table"
 
 const VariantsDashboard = () => {
     const appId = useAppId()
+    const {projectId} = useProjectData()
     const router = useRouter()
     const [, setQueryVariant] = useQueryParamState("revisionId")
     const [activeTab, setActiveTab] = useQueryParam("tab", "variants")
@@ -105,7 +108,8 @@ const VariantsDashboard = () => {
         return `${baseAppURL}/${appId}/variants`
     }, [appId, baseAppURL])
 
-    const tabBreadcrumbLabel = activeTab === "deployments" ? "Deployments" : "Variants"
+    const tabBreadcrumbLabel =
+        activeTab === "deployments" ? "Deployments" : activeTab === "sync" ? "Sync" : "Variants"
 
     useBreadcrumbsEffect(
         {
@@ -259,6 +263,15 @@ const VariantsDashboard = () => {
                     </span>
                 ),
             },
+            {
+                key: "sync",
+                label: (
+                    <span className="inline-flex items-center gap-2">
+                        <CodeSimpleIcon />
+                        Sync
+                    </span>
+                ),
+            },
         ],
         [],
     )
@@ -371,9 +384,15 @@ const VariantsDashboard = () => {
         </div>
     )
 
+    const syncContent = projectId && appId ? <SyncTab projectId={projectId} appId={appId} /> : null
+
     return (
         <PageLayout title="Registry" headerTabsProps={headerTabsProps} className="grow min-h-0">
-            {activeTab === "deployments" ? deploymentsContent : variantContent}
+            {activeTab === "deployments"
+                ? deploymentsContent
+                : activeTab === "sync"
+                  ? syncContent
+                  : variantContent}
         </PageLayout>
     )
 }

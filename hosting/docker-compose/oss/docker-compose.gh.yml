@@ -6,10 +6,10 @@ services:
         profiles:
             - with-web
         # === IMAGE ================================================ #
-        # build:
-        #     context: ../../../web
-        #     dockerfile: oss/docker/Dockerfile.gh
-        image: ghcr.io/agenta-ai/${AGENTA_WEB_IMAGE_NAME:-agenta-web}:${AGENTA_WEB_IMAGE_TAG:-latest}
+        build:
+            context: ../../../web
+            dockerfile: oss/docker/Dockerfile.gh
+        image: agenta-web-local:dev
         # === EXECUTION ============================================ #
         command: sh -c "node ./oss/server.js"
         # === CONFIGURATION ======================================== #
@@ -232,6 +232,26 @@ services:
         # === LIFECYCLE ============================================ #
         restart: always
 
+    prompt-sync:
+        build:
+            context: ../../../prompt-sync
+            dockerfile: Dockerfile
+        environment:
+            - PROMPT_SYNC_DATABASE_URL=sqlite:////data/prompt_sync.db
+        volumes:
+            - prompt-sync-data:/data
+        networks:
+            - agenta-oss-gh-network
+        labels:
+            - "traefik.http.routers.prompt-sync.rule=PathPrefix(`/sync/`)"
+            - "traefik.http.routers.prompt-sync.entrypoints=web"
+            - "traefik.http.middlewares.prompt-sync-strip.stripprefix.prefixes=/sync"
+            - "traefik.http.middlewares.prompt-sync-strip.stripprefix.forceslash=true"
+            - "traefik.http.routers.prompt-sync.middlewares=prompt-sync-strip"
+            - "traefik.http.services.prompt-sync.loadbalancer.server.port=8080"
+            - "traefik.http.routers.prompt-sync.service=prompt-sync"
+        restart: always
+
     postgres:
         # === IMAGE ================================================ #
         image: postgres:16
@@ -369,7 +389,7 @@ services:
 
     supertokens:
         # === IMAGE ================================================ #
-        image: registry.supertokens.io/supertokens/supertokens-postgresql
+        image: supertokens/supertokens-postgresql
         # === CONFIGURATION ======================================== #
         env_file:
             - ${ENV_FILE:-./.env.oss.gh}
@@ -400,3 +420,4 @@ volumes:
     postgres-data:
     redis-volatile-data:
     redis-durable-data:
+    prompt-sync-data:
