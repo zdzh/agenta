@@ -6,8 +6,10 @@ import {
     Alert,
     Button,
     Descriptions,
+    Divider,
     Form,
     Input,
+    Popconfirm,
     Select,
     Space,
     Table,
@@ -20,9 +22,11 @@ import useSWR from "swr"
 
 import {
     createSyncConfig,
+    deleteSyncConfig,
     fetchSyncConfigByScope,
     fetchSyncDeploymentStatus,
     SyncConfig,
+    updateSyncConfig,
     triggerResync,
     SyncDeploymentRow,
 } from "@/oss/services/promptSync/api"
@@ -59,8 +63,13 @@ const parseJsonObject = (value: string, fieldName: string): Record<string, strin
 const SyncTab = ({projectId, appId}: SyncTabProps) => {
     const [runningKey, setRunningKey] = useState<string | null>(null)
     const [createOpen, setCreateOpen] = useState(false)
+    const [editOpen, setEditOpen] = useState(false)
     const [creating, setCreating] = useState(false)
+    const [updating, setUpdating] = useState(false)
+    const [deletingId, setDeletingId] = useState<number | null>(null)
+    const [editingConfig, setEditingConfig] = useState<SyncConfig | null>(null)
     const [form] = Form.useForm<CreateSyncConfigFormValues>()
+    const [editForm] = Form.useForm<CreateSyncConfigFormValues>()
 
     const swrKey = projectId && appId ? ["prompt-sync-status", projectId, appId] : null
     const {
@@ -240,9 +249,73 @@ const SyncTab = ({projectId, appId}: SyncTabProps) => {
                             width: 160,
                         },
                         {title: "Updated", dataIndex: "updated_at", key: "updated_at", width: 200},
+                        {
+                            title: "操作",
+                            key: "actions",
+                            width: 180,
+                            render: (_, row) => (
+                                <Space>
+                                    <Button
+                                        size="small"
+                                        onClick={() => {
+                                            setEditingConfig(row)
+                                            editForm.setFieldsValue({
+                                                environment: row.environment,
+                                                agenta_api_base: row.agenta_api_base,
+                                                external_api_base: row.external_api_base,
+                                                external_pull_path: row.external_pull_path,
+                                                external_push_path: row.external_push_path,
+                                                external_auth_headers_json: JSON.stringify(
+                                                    row.external_auth_headers || {},
+                                                ),
+                                                environment_map_json: JSON.stringify(
+                                                    row.environment_map || {},
+                                                ),
+                                                default_variant_slug: row.default_variant_slug,
+                                                pull_transform_script:
+                                                    row.pull_transform_script || "",
+                                                push_transform_script:
+                                                    row.push_transform_script || "",
+                                            })
+                                            setEditOpen(true)
+                                        }}
+                                    >
+                                        编辑
+                                    </Button>
+                                    <Popconfirm
+                                        title="删除 Sync Config"
+                                        description="删除后该环境的同步配置将不可用（历史 jobs/snapshot 会一并清理）。"
+                                        okText="删除"
+                                        cancelText="取消"
+                                        okButtonProps={{
+                                            danger: true,
+                                            loading: deletingId === row.id,
+                                        }}
+                                        onConfirm={async () => {
+                                            try {
+                                                setDeletingId(row.id)
+                                                await deleteSyncConfig({configId: row.id})
+                                                message.success("删除成功")
+                                                await mutateConfig()
+                                                await mutate()
+                                            } catch (e: any) {
+                                                message.error(e?.message || "删除失败")
+                                            } finally {
+                                                setDeletingId(null)
+                                            }
+                                        }}
+                                    >
+                                        <Button danger size="small">
+                                            删除
+                                        </Button>
+                                    </Popconfirm>
+                                </Space>
+                            ),
+                        },
                     ]}
                 />
             ) : null}
+            {syncConfig?.length ? <Divider className="my-1" /> : null}
             {error ? <Alert type="warning" showIcon message={errorText} /> : null}
             <Table<SyncDeploymentRow>
                 rowKey="variant_id"
@@ -437,6 +510,179 @@ const SyncTab = ({projectId, appId}: SyncTabProps) => {
                         </Button>
                         <Button type="primary" htmlType="submit" loading={creating}>
                             Create
+                        </Button>
+                    </div>
+                </Form>
+            </EnhancedModal>
+
+            <EnhancedModal
+                open={editOpen}
+                title="Edit Sync Config"
+                footer={null}
+                width={760}
+                onCancel={() => {
+                    if (updating) return
+                    setEditOpen(false)
+                    setEditingConfig(null)
+                }}
+            >
+                <Form<CreateSyncConfigFormValues>
+                    layout="vertical"
+                    form={editForm}
+                    onFinish={async (values) => {
+                        if (!editingConfig) return
+                        try {
+                            setUpdating(true)
+                            const externalAuthHeaders = parseJsonObject(
+                                values.external_auth_headers_json,
+                                "External auth headers",
+                            )
+                            const environmentMap = parseJsonObject(
+                                values.environment_map_json,
+                                "Environment map",
+                            )
+
+                            await updateSyncConfig({
+                                configId: editingConfig.id,
+                                payload: {
+                                    agenta_api_base: values.agenta_api_base,
+                                    external_api_base: values.external_api_base,
+                                    external_pull_path: values.external_pull_path,
+                                    external_push_path: values.external_push_path,
+                                    external_auth_headers: externalAuthHeaders,
+                                    environment_map: environmentMap,
+                                    default_variant_slug: values.default_variant_slug,
+                                    pull_transform_script: values.pull_transform_script || null,
+                                    push_transform_script: values.push_transform_script || null,
+                                },
+                            })
+
+                            message.success("更新成功")
+                            setEditOpen(false)
+                            setEditingConfig(null)
+                            await mutateConfig()
+                            await mutate()
+                        } catch (submitError: any) {
+                            message.error(submitError?.message || "更新失败")
+                        } finally {
+                            setUpdating(false)
+                        }
+                    }}
+                >
+                    <Form.Item
+                        label="环境"
+                        name="environment"
+                        extra="环境不可修改（删除后可重新创建）。"
+                    >
+                        <Select
+                            disabled
+                            options={KNOWN_ENVS.map((v) => ({label: v, value: v}))}
+                            placeholder="development"
+                        />
+                    </Form.Item>
+
+                    <Form.Item
+                        label="Agenta API Base"
+                        name="agenta_api_base"
+                        rules={[{required: true, message: "Agenta API base is required"}]}
+                        extra="Sync 服务访问 Agenta API 的基础地址。Docker Compose 内通常填写 http://api:8000（不要加 /api 后缀）。"
+                    >
+                        <Input placeholder="http://api:8000" />
+                    </Form.Item>
+
+                    <Form.Item
+                        label="External API Base"
+                        name="external_api_base"
+                        rules={[{required: true, message: "External API base is required"}]}
+                        extra="外部应用 API 的基础地址，例如 https://api.your-app.com。"
+                    >
+                        <Input placeholder="https://external-api.example.com" />
+                    </Form.Item>
+
+                    <Form.Item
+                        label="External Pull Path"
+                        name="external_pull_path"
+                        rules={[{required: true, message: "External pull path is required"}]}
+                        extra="用于“外部 -> Agenta”同步的 GET 路径。完整地址 = External API Base + 该路径。"
+                    >
+                        <Input placeholder="/prompts/pull" />
+                    </Form.Item>
+
+                    <Form.Item
+                        label="External Push Path"
+                        name="external_push_path"
+                        rules={[{required: true, message: "External push path is required"}]}
+                        extra="用于“Agenta -> 外部”同步的 POST 路径。完整地址 = External API Base + 该路径。"
+                    >
+                        <Input placeholder="/prompts/push" />
+                    </Form.Item>
+
+                    <Form.Item
+                        label="External Auth Headers (JSON object)"
+                        name="external_auth_headers_json"
+                        rules={[
+                            {required: true, message: "External auth headers JSON is required"},
+                        ]}
+                        extra='请求外部 API 时附带的 HTTP Header，必须是 JSON 对象，例如 {"Authorization":"Bearer xxx","X-App":"sync"}。'
+                    >
+                        <Input.TextArea rows={3} placeholder='{"Authorization":"Bearer ..."}' />
+                    </Form.Item>
+
+                    <Form.Item
+                        label="Environment Map (JSON object)"
+                        name="environment_map_json"
+                        rules={[{required: true, message: "Environment map JSON is required"}]}
+                        extra='环境映射：Agenta 环境名 -> 外部系统环境名，例如 {"development":"dev","staging":"test","production":"prod"}。'
+                    >
+                        <Input.TextArea
+                            rows={3}
+                            placeholder='{"development":"dev","staging":"test","production":"prod"}'
+                        />
+                    </Form.Item>
+
+                    <Form.Item
+                        label="Default Variant Slug"
+                        name="default_variant_slug"
+                        rules={[{required: true, message: "Default variant slug is required"}]}
+                        extra="当 pull 同步目标 variant 不存在时使用的默认 slug；服务可按该值自动创建 variant。"
+                    >
+                        <Input placeholder="default" />
+                    </Form.Item>
+
+                    <Form.Item
+                        label="Pull Transform Script (optional)"
+                        name="pull_transform_script"
+                        extra="可选 Python 转换脚本（外部 -> Agenta）。从 stdin 读取 JSON，转换后向 stdout 输出 JSON 对象。"
+                    >
+                        <Input.TextArea
+                            rows={6}
+                            placeholder="Python script, stdin JSON -> stdout JSON"
+                        />
+                    </Form.Item>
+
+                    <Form.Item
+                        label="Push Transform Script (optional)"
+                        name="push_transform_script"
+                        extra="可选 Python 转换脚本（Agenta -> 外部）。从 stdin 读取 JSON，转换后向 stdout 输出 JSON 对象。"
+                    >
+                        <Input.TextArea
+                            rows={6}
+                            placeholder="Python script, stdin JSON -> stdout JSON"
+                        />
+                    </Form.Item>
+
+                    <div className="flex justify-end gap-2">
+                        <Button
+                            onClick={() => {
+                                if (updating) return
+                                setEditOpen(false)
+                                setEditingConfig(null)
+                            }}
+                        >
+                            Cancel
+                        </Button>
+                        <Button type="primary" htmlType="submit" loading={updating}>
+                            Save
                         </Button>
                     </div>
                 </Form>

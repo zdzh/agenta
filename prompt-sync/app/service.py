@@ -128,6 +128,17 @@ def get_config(db: Session, config_id: int) -> dict[str, Any]:
     return _config_to_dict(config)
 
 
+def delete_config(db: Session, config_id: int) -> None:
+    config = db.get(SyncConfig, config_id)
+    if config is None:
+        raise ValueError("sync config not found")
+
+    db.execute(delete(SyncJob).where(SyncJob.config_id == config_id))
+    db.execute(delete(DeploymentSnapshot).where(DeploymentSnapshot.config_id == config_id))
+    db.execute(delete(SyncConfig).where(SyncConfig.id == config_id))
+    db.commit()
+
+
 def _map_environment(config: SyncConfig, environment: str) -> str:
     env_map = json.loads(config.environment_map_json or "{}")
     return env_map.get(environment, environment)

@@ -45,6 +45,19 @@ export interface SyncConfig {
     updated_at: string
 }
 
+export interface UpdateSyncConfigPayload {
+    agenta_api_base?: string
+    agenta_api_key?: string | null
+    external_api_base?: string
+    external_pull_path?: string
+    external_push_path?: string
+    external_auth_headers?: Record<string, string>
+    environment_map?: Record<string, string>
+    default_variant_slug?: string
+    pull_transform_script?: string | null
+    push_transform_script?: string | null
+}
+
 const jsonHeaders = {
     "Content-Type": "application/json",
 }
@@ -119,4 +132,35 @@ export const fetchSyncConfigByScope = async (params: {projectId: string; appId: 
     return data.filter(
         (item) => item.project_id === params.projectId && item.agenta_app_id === params.appId,
     )
+}
+
+export const updateSyncConfig = async (params: {
+    configId: number
+    payload: UpdateSyncConfigPayload
+}) => {
+    const response = await fetch(`/sync/v1/configs/${params.configId}`, {
+        method: "PUT",
+        headers: jsonHeaders,
+        body: JSON.stringify(params.payload),
+    })
+
+    if (!response.ok) {
+        const text = await response.text()
+        throw new Error(text || "Failed to update sync config")
+    }
+
+    return response.json()
+}
+
+export const deleteSyncConfig = async (params: {configId: number}) => {
+    const response = await fetch(`/sync/v1/configs/${params.configId}`, {
+        method: "DELETE",
+    })
+
+    if (!response.ok) {
+        const text = await response.text()
+        throw new Error(text || "Failed to delete sync config")
+    }
+
+    return response.json()
 }

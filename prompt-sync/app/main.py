@@ -15,6 +15,7 @@ from .schemas import (
 )
 from .service import (
     create_config,
+    delete_config,
     get_config,
     get_deployment_status,
     list_configs,
@@ -60,6 +61,15 @@ def get_sync_config(config_id: int, db: Session = Depends(get_db)):
 def update_sync_config(config_id: int, payload: SyncConfigUpdate, db: Session = Depends(get_db)):
     try:
         return update_config(db, config_id, payload)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+
+@app.delete("/v1/configs/{config_id}")
+def delete_sync_config(config_id: int, db: Session = Depends(get_db)):
+    try:
+        delete_config(db, config_id)
+        return {"status": "success"}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
 
